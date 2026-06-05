@@ -40,6 +40,23 @@ async function run() {
       res.send(result);
     })
 
+    app.patch("/api/companies/:userId", async (req, res) => {
+      const userId = req.params.userId;
+      const updateData = req.body;
+      const result = await companiesCollection.updateOne(
+        { userId: userId },
+        { $set: updateData },
+        { upsert: true }
+      );
+      res.send(result);
+    })
+
+    app.delete("/api/companies/:userId", async (req, res) => {
+      const userId = req.params.userId;
+      const result = await companiesCollection.deleteOne({ userId: userId });
+      res.send(result);
+    });
+
     app.post("/api/jobs", async (req, res) => {
       const job = req.body;
       console.log(job);
