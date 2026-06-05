@@ -1,4 +1,4 @@
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const express = require("express");
 const cors = require("cors");
 const app = express();
@@ -38,7 +38,7 @@ async function run() {
       console.log(company);
       const result = await companiesCollection.insertOne(company);
       res.send(result);
-    })
+    });
 
     app.patch("/api/companies/:userId", async (req, res) => {
       const userId = req.params.userId;
@@ -46,10 +46,10 @@ async function run() {
       const result = await companiesCollection.updateOne(
         { userId: userId },
         { $set: updateData },
-        { upsert: true }
+        { upsert: true },
       );
       res.send(result);
-    })
+    });
 
     app.delete("/api/companies/:userId", async (req, res) => {
       const userId = req.params.userId;
@@ -59,7 +59,6 @@ async function run() {
 
     app.post("/api/jobs", async (req, res) => {
       const job = req.body;
-      console.log(job);
       const result = await jobsCollection.insertOne(job);
       res.send(result);
     });
@@ -75,6 +74,27 @@ async function run() {
       const cursor = jobsCollection.find(query);
       const result = await cursor.toArray();
       res.send(result);
+    });
+
+    app.delete("/api/jobs/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).send({ error: "Invalid job ID format" });
+        }
+        const result = await jobsCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+
+        if (result.deletedCount === 0) {
+          return res.status(404).send({ error: "Job not found" });
+        }
+
+        res.status(200).send(result);
+      } catch (error) {
+        console.error("Error deleting job:", error);
+        res.status(500).send({ error: "Internal server error" });
+      }
     });
 
     console.log(
