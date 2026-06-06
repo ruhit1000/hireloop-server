@@ -85,18 +85,25 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/api/jobs", async (req, res) => {
-      const query = {};
-      if (req.query.companyId) {
-        query.companyId = req.query.companyId;
-      }
-      if (req.query.status) {
-        query.status = req.query.status;
-      }
-      const cursor = jobsCollection.find(query);
+    app.get("/api/jobs/:companyId", async (req, res) => {
+      const companyId = req.params.companyId;
+      const cursor = jobsCollection.find({ companyId: companyId });
       const result = await cursor.toArray();
       res.send(result);
-    });
+    })
+
+    // app.get("/api/jobs", async (req, res) => {
+    //   const query = {};
+    //   if (req.query.companyId) {
+    //     query.companyId = req.query.companyId;
+    //   }
+    //   if (req.query.status) {
+    //     query.status = req.query.status;
+    //   }
+    //   const cursor = jobsCollection.find(query);
+    //   const result = await cursor.toArray();
+    //   res.send(result);
+    // });
 
     app.delete("/api/jobs/:id", async (req, res) => {
       try {
