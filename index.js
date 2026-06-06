@@ -26,6 +26,7 @@ async function run() {
     const jobsCollection = db.collection("jobs");
     const companiesCollection = db.collection("companies");
 
+    // All API endpoints for companies
     app.get("/api/companies/:userId", async (req, res) => {
       const userId = req.params.userId;
       const company = await companiesCollection.findOne({ userId: userId });
@@ -35,28 +36,49 @@ async function run() {
 
     app.post("/api/companies", async (req, res) => {
       const company = req.body;
-      console.log(company);
       const result = await companiesCollection.insertOne(company);
       res.send(result);
     });
 
-    app.patch("/api/companies/:userId", async (req, res) => {
-      const userId = req.params.userId;
-      const updateData = req.body;
-      const result = await companiesCollection.updateOne(
-        { userId: userId },
-        { $set: updateData },
-        { upsert: true },
-      );
-      res.send(result);
+    app.patch("/api/companies/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).send({ error: "Invalid company ID format" });
+        }
+        const updateData = req.body;
+        const result = await companiesCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updateData },
+          { upsert: true },
+        );
+        res.send(result);
+      } catch (error) {
+        console.error("Error updating company:", error);
+        res.status(500).send({ error: "Internal server error" });
+      }
     });
 
-    app.delete("/api/companies/:userId", async (req, res) => {
-      const userId = req.params.userId;
-      const result = await companiesCollection.deleteOne({ userId: userId });
-      res.send(result);
-    });
+    app.delete("/api/companies/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).send({ error: "Invalid company ID format" });
+        }
+        const result = await companiesCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+        if (result.deletedCount === 0) {
+          return res.status(404).send({ error: "Company not found" });
+        }
+        res.status(200).send(result);
+      } catch (error) {
+        console.error("Error deleting company:", error);
+        res.status(500).send({ error: "Internal server error" });
+      }
+    })
 
+    // All API endpoints for jobs
     app.post("/api/jobs", async (req, res) => {
       const job = req.body;
       const result = await jobsCollection.insertOne(job);
