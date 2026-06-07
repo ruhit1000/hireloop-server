@@ -31,7 +31,7 @@ async function run() {
       const cursor = usersCollection.find({});
       const result = await cursor.toArray();
       res.send(result);
-    })
+    });
 
     // All API endpoints for companies
     app.get("/api/companies", async (req, res) => {
@@ -89,14 +89,9 @@ async function run() {
         console.error("Error deleting company:", error);
         res.status(500).send({ error: "Internal server error" });
       }
-    })
+    });
 
     // All API endpoints for jobs
-    app.get("/api/jobs", async (req, res) => {
-      const cursor = jobsCollection.find({});
-      const result = await cursor.toArray();
-      res.send(result);
-    });
 
     app.post("/api/jobs", async (req, res) => {
       const job = req.body;
@@ -104,25 +99,30 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/api/jobs/:companyId", async (req, res) => {
-      const companyId = req.params.companyId;
-      const cursor = jobsCollection.find({ companyId: companyId });
+    app.get("/api/jobs/:id", async (req, res) => {
+      const id = req.params.id;
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).send({ error: "Invalid job ID format" });
+      }
+      const job = await jobsCollection.findOne({ _id: new ObjectId(id) });
+      if (!job) {
+        return res.status(404).send({ error: "Job not found" });
+      }
+      res.send(job);
+    });
+
+    app.get("/api/jobs", async (req, res) => {
+      const query = {};
+      if (req.query.companyId) {
+        query.companyId = req.query.companyId;
+      }
+      if (req.query.status) {
+        query.jobStatus = req.query.status;
+      }
+      const cursor = jobsCollection.find(query);
       const result = await cursor.toArray();
       res.send(result);
-    })
-
-    // app.get("/api/jobs", async (req, res) => {
-    //   const query = {};
-    //   if (req.query.companyId) {
-    //     query.companyId = req.query.companyId;
-    //   }
-    //   if (req.query.status) {
-    //     query.status = req.query.status;
-    //   }
-    //   const cursor = jobsCollection.find(query);
-    //   const result = await cursor.toArray();
-    //   res.send(result);
-    // });
+    });
 
     app.delete("/api/jobs/:id", async (req, res) => {
       try {
