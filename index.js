@@ -112,16 +112,48 @@ async function run() {
     });
 
     app.get("/api/jobs", async (req, res) => {
-      const query = {};
-      if (req.query.companyId) {
-        query.companyId = req.query.companyId;
+      try {
+        const query = {};
+
+        if (req.query.companyId && req.query.companyId !== "undefined") {
+          query.companyId = req.query.companyId;
+        }
+        if (req.query.status) {
+          query.jobStatus = req.query.status;
+        }
+        if (req.query.featured) {
+          query.isFeatured = req.query.featured === "true";
+        }
+
+        // --- Search & Filter Parameters ---
+
+        // Search by Job Title (Partial match, Case-insensitive)
+        if (req.query.search) {
+          query.jobTitle = { $regex: req.query.search, $options: "i" };
+        }
+
+        // Exact match for Category
+        if (req.query.category && req.query.category !== "all") {
+          query.jobCategory = req.query.category;
+        }
+
+        // Exact match for Job Type
+        if (req.query.type && req.query.type !== "all") {
+          query.jobType = req.query.type;
+        }
+
+        // Boolean check for Location (Remote vs Onsite)
+        if (req.query.location && req.query.location !== "all") {
+          query.isRemote = req.query.location === "remote";
+        }
+
+        const cursor = jobsCollection.find(query);
+        const result = await cursor.toArray();
+        res.send(result);
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ error: "Internal server error" });
       }
-      if (req.query.status) {
-        query.jobStatus = req.query.status;
-      }
-      const cursor = jobsCollection.find(query);
-      const result = await cursor.toArray();
-      res.send(result);
     });
 
     app.delete("/api/jobs/:id", async (req, res) => {
