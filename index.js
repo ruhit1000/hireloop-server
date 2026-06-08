@@ -26,7 +26,33 @@ async function run() {
     const jobsCollection = db.collection("jobs");
     const companiesCollection = db.collection("companies");
     const usersCollection = db.collection("user");
+    const applicationsCollection = db.collection("applications");
 
+    // All API endpoints for applications
+    app.get("/api/applications", async (req, res) => {
+      const query = {};
+      if (req.query.applicantId) {
+        query.applicantId = req.query.applicantId;
+      }
+      if (req.query.jobId) {
+        query.jobId = req.query.jobId;
+      }
+      const cursor = applicationsCollection.find(query);
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
+    app.post("/api/applications", async (req, res) => {
+      const application = req.body;
+      const newApplication = {
+        ...application,
+        applicationDate: new Date(),
+      }
+      const result = await applicationsCollection.insertOne(newApplication);
+      res.send(result);
+    });
+
+    // All API endpoints for users
     app.get("/api/users", async (req, res) => {
       const cursor = usersCollection.find({});
       const result = await cursor.toArray();
