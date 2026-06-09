@@ -27,6 +27,8 @@ async function run() {
     const companiesCollection = db.collection("companies");
     const usersCollection = db.collection("user");
     const applicationsCollection = db.collection("applications");
+    const plansCollection = db.collection("plans");
+    const subscriptionsCollection = db.collection("subscriptions");
 
     // All API endpoints for applications
     app.get("/api/applications", async (req, res) => {
@@ -201,6 +203,37 @@ async function run() {
         console.error("Error deleting job:", error);
         res.status(500).send({ error: "Internal server error" });
       }
+    });
+
+    // All API endpoints for plans
+    app.get("/api/plans", async (req, res) => {
+      const query = {};
+      if (req.query.plan_id) {
+        query.plan_id = req.query.plan_id;
+      }
+      const cursor = await plansCollection.findOne(query);
+      res.send(cursor);
+    })
+
+    // All API endpoints for subscriptions
+    app.post("/api/subscriptions", async (req, res) => {
+      const data = req.body;
+      const subscription = {
+        ...data,
+        createdAt: new Date(),
+      }
+      const result = await subscriptionsCollection.insertOne(subscription);
+
+      // update the user form information
+      const filter = { email: data.email };
+      const updateDoc = {
+        $set: {
+          plan: data.planId,
+        },
+      };
+
+      const updateResult = await usersCollection.updateOne(filter, updateDoc);
+      res.send({result, updateResult});
     });
 
     console.log(
