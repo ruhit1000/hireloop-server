@@ -139,9 +139,9 @@ async function run() {
       }
     });
 
-    app.get("/api/companies/:userId", async (req, res) => {
-      const userId = req.params.userId;
-      const company = await companiesCollection.findOne({ userId: userId });
+    app.get("/api/companies/:recruiterId", async (req, res) => {
+      const recruiterId = req.params.recruiterId;
+      const company = await companiesCollection.findOne({ recruiterId: recruiterId });
       const companyInfo = company || {};
       res.send(companyInfo);
     });
