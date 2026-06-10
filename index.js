@@ -31,6 +31,18 @@ async function run() {
     const subscriptionsCollection = db.collection("subscriptions");
 
     // All API endpoints for applications
+    // app.get("/api/applications/:id", async (req, res) => {
+    //   const id = req.params.id;
+    //   if (!ObjectId.isValid(id)) {
+    //     return res.status(400).send({ error: "Invalid application ID format" });
+    //   }
+    //   const application = await applicationsCollection.findOne({ _id: new ObjectId(id) });
+    //   if (!application) {
+    //     return res.status(404).send({ error: "Application not found" });
+    //   }
+    //   res.send(application);
+    // });
+
     app.get("/api/applications", async (req, res) => {
       const query = {};
       if (req.query.applicantId) {
@@ -49,7 +61,7 @@ async function run() {
       const newApplication = {
         ...application,
         applicationDate: new Date(),
-      }
+      };
       const result = await applicationsCollection.insertOne(newApplication);
       res.send(result);
     });
@@ -61,11 +73,70 @@ async function run() {
       res.send(result);
     });
 
+    app.get("/api/users/:id", async (req, res) => {
+      const id = req.params.id;
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).send({ error: "Invalid user ID format" });
+      }
+      const user = await usersCollection.findOne({ _id: new ObjectId(id) });
+      if (!user) {
+        return res.status(404).send({ error: "User not found" });
+      }
+      res.send(user);
+    });
+
     // All API endpoints for companies
     app.get("/api/companies", async (req, res) => {
-      const cursor = companiesCollection.find({});
-      const result = await cursor.toArray();
-      res.send(result);
+      try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 5;
+        const skip = (page - 1) * limit;
+
+        const statusFilter = req.query.status || "all";
+        const query = {};
+        if (statusFilter && statusFilter !== "all") {
+          query.companyStatus = statusFilter;
+        }
+
+        // --- ADDED .sort({ _id: -1 }) TO ENFORCE LATEST FIRST ---
+        const cursor = companiesCollection
+          .find(query)
+          .sort({ _id: -1 }) // Or use .sort({ createdAt: -1 }) if you track dates explicitly
+          .skip(skip)
+          .limit(limit);
+
+        const companies = await cursor.toArray();
+        const totalItems = await companiesCollection.countDocuments(query);
+
+        const totalPending = await companiesCollection.countDocuments({
+          companyStatus: "pending",
+        });
+        const totalApproved = await companiesCollection.countDocuments({
+          companyStatus: "approved",
+        });
+        const totalRejected = await companiesCollection.countDocuments({
+          companyStatus: "rejected",
+        });
+
+        res.send({
+          companies,
+          pagination: {
+            totalItems,
+            page,
+            limit,
+            totalPages: Math.ceil(totalItems / limit),
+            currentStatus: statusFilter,
+          },
+          stats: {
+            pending: totalPending,
+            approved: totalApproved,
+            rejected: totalRejected,
+          },
+        });
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ error: "Internal server error" });
+      }
     });
 
     app.get("/api/companies/:userId", async (req, res) => {
@@ -213,7 +284,7 @@ async function run() {
       }
       const cursor = await plansCollection.findOne(query);
       res.send(cursor);
-    })
+    });
 
     // All API endpoints for subscriptions
     app.post("/api/subscriptions", async (req, res) => {
@@ -221,7 +292,7 @@ async function run() {
       const subscription = {
         ...data,
         createdAt: new Date(),
-      }
+      };
       const result = await subscriptionsCollection.insertOne(subscription);
 
       // update the user form information
@@ -233,7 +304,7 @@ async function run() {
       };
 
       const updateResult = await usersCollection.updateOne(filter, updateDoc);
-      res.send({result, updateResult});
+      res.send({ result, updateResult });
     });
 
     console.log(
