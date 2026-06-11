@@ -141,7 +141,9 @@ async function run() {
 
     app.get("/api/companies/:recruiterId", async (req, res) => {
       const recruiterId = req.params.recruiterId;
-      const company = await companiesCollection.findOne({ recruiterId: recruiterId });
+      const company = await companiesCollection.findOne({
+        recruiterId: recruiterId,
+      });
       const companyInfo = company || {};
       res.send(companyInfo);
     });
@@ -177,13 +179,26 @@ async function run() {
         if (!ObjectId.isValid(id)) {
           return res.status(400).send({ error: "Invalid company ID format" });
         }
+
+        // 1. Delete the company first
         const result = await companiesCollection.deleteOne({
           _id: new ObjectId(id),
         });
+
+        // 2. If no company was deleted, stop here and return 404
         if (result.deletedCount === 0) {
           return res.status(404).send({ error: "Company not found" });
         }
-        res.status(200).send(result);
+
+        // 3. Only delete jobs if the company actually existed and was wiped out
+        await jobsCollection.deleteMany({ companyId: id });
+
+        res
+          .status(200)
+          .send({
+            success: true,
+            message: "Company and associated jobs deleted.",
+          });
       } catch (error) {
         console.error("Error deleting company:", error);
         res.status(500).send({ error: "Internal server error" });
@@ -246,8 +261,34 @@ async function run() {
           query.isRemote = req.query.location === "remote";
         }
 
-        const cursor = jobsCollection.find(query);
-        const result = await cursor.toArray();
+        const pipeline = [
+          { $match: query },
+          {
+            $lookup: {
+              from: "companies",
+              let: { jobCompanyId: "$companyId" },
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $and: [
+                        { $eq: ["$_id", { $toObjectId: "$$jobCompanyId" }] },
+                        { $eq: ["$companyStatus", "approved"] },
+                      ],
+                    },
+                  },
+                },
+              ],
+              as: "companyDetails",
+            },
+          },
+
+          { $match: { companyDetails: { $not: { $size: 0 } } } },
+
+          { $project: { companyDetails: 0 } },
+        ];
+
+        const result = await jobsCollection.aggregate(pipeline).toArray();
         res.send(result);
       } catch (error) {
         console.error(error);
