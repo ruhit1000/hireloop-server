@@ -379,6 +379,11 @@ async function run() {
       }
       const companyId = company._id.toString();
 
+      const recentApplications = await applicationsCollection
+        .find({ companyId })
+        .sort({ applicationDate: -1 })
+        .limit(5)
+        .toArray();
       const totalJobs = await jobsCollection.countDocuments({ companyId });
       const totalApplications = await applicationsCollection.countDocuments({
         companyId,
@@ -397,6 +402,7 @@ async function run() {
         totalApplications,
         activeJobs,
         closedJobs,
+        recentApplications,
       });
     });
 
