@@ -51,6 +51,16 @@ async function run() {
       if (req.query.jobId) {
         query.jobId = req.query.jobId;
       }
+      if (req.query.recruiterId) {
+        const company = await companiesCollection.findOne({
+          recruiterId: req.query.recruiterId,
+        });
+        if (company) {
+          query.companyId = company._id.toString();
+        } else {
+          return res.status(404).send({ error: "Company not found for recruiter" });
+        }
+      }
       const cursor = applicationsCollection.find(query);
       const result = await cursor.toArray();
       res.send(result);
@@ -65,6 +75,20 @@ async function run() {
       const result = await applicationsCollection.insertOne(newApplication);
       res.send(result);
     });
+
+    app.patch("/api/applications/:id", async (req, res) => {
+      const id = req.params.id;
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).send({ error: "Invalid application ID format" });
+      }
+      const updateData = req.body;
+      const result = await applicationsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: updateData },
+        { upsert: true },
+      );
+      res.send(result);
+    })
 
     // All API endpoints for users
     app.get("/api/users", async (req, res) => {
