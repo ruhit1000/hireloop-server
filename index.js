@@ -193,12 +193,10 @@ async function run() {
         // 3. Only delete jobs if the company actually existed and was wiped out
         await jobsCollection.deleteMany({ companyId: id });
 
-        res
-          .status(200)
-          .send({
-            success: true,
-            message: "Company and associated jobs deleted.",
-          });
+        res.status(200).send({
+          success: true,
+          message: "Company and associated jobs deleted.",
+        });
       } catch (error) {
         console.error("Error deleting company:", error);
         res.status(500).send({ error: "Internal server error" });
@@ -232,7 +230,7 @@ async function run() {
         if (req.query.companyId && req.query.companyId !== "undefined") {
           query.companyId = req.query.companyId;
         }
-        if (req.query.status) {
+        if (req.query.status && req.query.status !== "all") {
           query.jobStatus = req.query.status;
         }
         if (req.query.featured) {
@@ -317,6 +315,25 @@ async function run() {
       }
     });
 
+    app.patch("/api/jobs/:id", async (req, res) =>{
+      try {
+        const id = req.params.id;
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).send({ error: "Invalid job ID format" });
+        }
+        const updateData = req.body;
+        const result = await jobsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updateData },
+          { upsert: true },
+        );
+        res.send(result);
+      } catch (error) {
+        console.error("Error updating job:", error);
+        res.status(500).send({ error: "Internal server error" });
+      }
+    });
+
     // All API endpoints for plans
     app.get("/api/plans", async (req, res) => {
       const query = {};
@@ -346,6 +363,41 @@ async function run() {
 
       const updateResult = await usersCollection.updateOne(filter, updateDoc);
       res.send({ result, updateResult });
+    });
+
+    // All API endpoints for recruiter dashboard stats
+    app.get("/api/recruiter-stats", async (req, res) => {
+      const { recruiterId } = req.query;
+      if (!recruiterId) {
+        return res.status(400).send({ error: "Missing recruiterId parameter" });
+      }
+      const company = await companiesCollection.findOne({ recruiterId });
+      if (!company) {
+        return res
+          .status(404)
+          .send({ error: "Company not found for recruiter" });
+      }
+      const companyId = company._id.toString();
+
+      const totalJobs = await jobsCollection.countDocuments({ companyId });
+      const totalApplications = await applicationsCollection.countDocuments({
+        companyId,
+      });
+      const activeJobs = await jobsCollection.countDocuments({
+        companyId,
+        jobStatus: "active",
+      });
+      const closedJobs = await jobsCollection.countDocuments({
+        companyId,
+        jobStatus: "closed",
+      });
+
+      res.send({
+        totalJobs,
+        totalApplications,
+        activeJobs,
+        closedJobs,
+      });
     });
 
     console.log(
