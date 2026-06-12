@@ -59,7 +59,21 @@ async function run() {
         return res.status(403).send({ message: "Forbidden Access" });
       }
       next();
-    }
+    };
+
+    const verifyAdmin = async (req, res, next) => {
+      if (req.user?.role !== "admin") {
+        return res.status(403).send({ message: "Forbidden Access" });
+      }
+      next();
+    };
+
+    const verifyRecruiter = async (req, res, next) => {
+      if (req.user?.role !== "recruiter") {
+        return res.status(403).send({ message: "Forbidden Access" });
+      }
+      next();
+    };
 
     // All API endpoints for applications
     // app.get("/api/applications/:id", async (req, res) => {
@@ -96,18 +110,23 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/api/my-applications", verifyToken, verifySeeker, async (req, res) => {
-      const query = {};
-      if (req.query.applicantId) {
-        query.applicantId = req.query.applicantId;
-        if (query.applicantId !== req.user._id.toString()) {
-          return res.status(403).send({ message: "Forbidden Access" });
+    app.get(
+      "/api/my-applications",
+      verifyToken,
+      verifySeeker,
+      async (req, res) => {
+        const query = {};
+        if (req.query.applicantId) {
+          query.applicantId = req.query.applicantId;
+          if (query.applicantId !== req.user._id.toString()) {
+            return res.status(403).send({ message: "Forbidden Access" });
+          }
         }
-      }
-      const cursor = applicationsCollection.find(query);
-      const result = await cursor.toArray();
-      res.send(result);
-    })
+        const cursor = applicationsCollection.find(query);
+        const result = await cursor.toArray();
+        res.send(result);
+      },
+    );
 
     app.post("/api/applications", async (req, res) => {
       const application = req.body;
