@@ -8,6 +8,11 @@ require("dotenv").config();
 app.use(cors());
 app.use(express.json());
 
+const logger = (req, res, next) => {
+  console.log("Verifying token...", req.params);
+  next();
+};
+
 const uri = process.env.MONGODB_URI;
 
 const client = new MongoClient(uri, {
@@ -29,6 +34,32 @@ async function run() {
     const applicationsCollection = db.collection("applications");
     const plansCollection = db.collection("plans");
     const subscriptionsCollection = db.collection("subscriptions");
+    const sessionCollection = db.collection("session");
+
+    // verification middleware for protected routes
+    const verifyToken = async (req, res, next) => {
+      const authHeader = req?.headers?.authorization;
+      if (!authHeader) {
+        return res.status(401).send({ message: "Unauthorized Access" });
+      }
+      const token = authHeader.split(" ")[1];
+      if (!token) {
+        return res.status(401).send({ message: "Unauthorized Access" });
+      }
+      const query = { token: token };
+      const session = await sessionCollection.findOne(query);
+      const userId = session?.userId;
+      const user = await usersCollection.findOne({ _id: userId });
+      req.user = user;
+      next();
+    };
+
+    const verifySeeker = async (req, res, next) => {
+      if (req.user?.role !== "seeker") {
+        return res.status(403).send({ message: "Forbidden Access" });
+      }
+      next();
+    }
 
     // All API endpoints for applications
     // app.get("/api/applications/:id", async (req, res) => {
@@ -43,11 +74,8 @@ async function run() {
     //   res.send(application);
     // });
 
-    app.get("/api/applications", async (req, res) => {
+    app.get("/api/applications", verifyToken, async (req, res) => {
       const query = {};
-      if (req.query.applicantId) {
-        query.applicantId = req.query.applicantId;
-      }
       if (req.query.jobId) {
         query.jobId = req.query.jobId;
       }
@@ -58,13 +86,28 @@ async function run() {
         if (company) {
           query.companyId = company._id.toString();
         } else {
-          return res.status(404).send({ error: "Company not found for recruiter" });
+          return res
+            .status(404)
+            .send({ error: "Company not found for recruiter" });
         }
       }
       const cursor = applicationsCollection.find(query);
       const result = await cursor.toArray();
       res.send(result);
     });
+
+    app.get("/api/my-applications", verifyToken, verifySeeker, async (req, res) => {
+      const query = {};
+      if (req.query.applicantId) {
+        query.applicantId = req.query.applicantId;
+        if (query.applicantId !== req.user._id.toString()) {
+          return res.status(403).send({ message: "Forbidden Access" });
+        }
+      }
+      const cursor = applicationsCollection.find(query);
+      const result = await cursor.toArray();
+      res.send(result);
+    })
 
     app.post("/api/applications", async (req, res) => {
       const application = req.body;
@@ -88,7 +131,7 @@ async function run() {
         { upsert: true },
       );
       res.send(result);
-    })
+    });
 
     // All API endpoints for users
     app.get("/api/users", async (req, res) => {
@@ -110,7 +153,7 @@ async function run() {
     });
 
     // All API endpoints for companies
-    app.get("/api/companies", async (req, res) => {
+    app.get("/api/companies", verifyToken, async (req, res) => {
       try {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 5;
@@ -178,7 +221,7 @@ async function run() {
       res.send(result);
     });
 
-    app.patch("/api/companies/:id", async (req, res) => {
+    app.patch("/api/companies/:id", verifyToken, async (req, res) => {
       try {
         const id = req.params.id;
         if (!ObjectId.isValid(id)) {
@@ -339,7 +382,7 @@ async function run() {
       }
     });
 
-    app.patch("/api/jobs/:id", async (req, res) =>{
+    app.patch("/api/jobs/:id", async (req, res) => {
       try {
         const id = req.params.id;
         if (!ObjectId.isValid(id)) {
