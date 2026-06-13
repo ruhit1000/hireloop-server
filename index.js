@@ -81,235 +81,8 @@ async function run() {
       next();
     };
 
-    // All API endpoints for applications
-    // app.get("/api/applications/:id", async (req, res) => {
-    //   const id = req.params.id;
-    //   if (!ObjectId.isValid(id)) {
-    //     return res.status(400).send({ error: "Invalid application ID format" });
-    //   }
-    //   const application = await applicationsCollection.findOne({ _id: new ObjectId(id) });
-    //   if (!application) {
-    //     return res.status(404).send({ error: "Application not found" });
-    //   }
-    //   res.send(application);
-    // });
-
-    app.get("/api/applications", verifyToken, async (req, res) => {
-      const query = {};
-      if (req.query.jobId) {
-        query.jobId = req.query.jobId;
-      }
-      if (req.query.recruiterId) {
-        const company = await companiesCollection.findOne({
-          recruiterId: req.query.recruiterId,
-        });
-        if (company) {
-          query.companyId = company._id.toString();
-        } else {
-          return res
-            .status(404)
-            .send({ error: "Company not found for recruiter" });
-        }
-      }
-      const cursor = applicationsCollection.find(query);
-      const result = await cursor.toArray();
-      res.send(result);
-    });
-
-    app.get(
-      "/api/my-applications",
-      verifyToken,
-      verifySeeker,
-      async (req, res) => {
-        const query = {};
-        if (req.query.applicantId) {
-          query.applicantId = req.query.applicantId;
-          if (query.applicantId !== req.user._id.toString()) {
-            return res.status(403).send({ message: "Forbidden Access" });
-          }
-        }
-        const cursor = applicationsCollection.find(query);
-        const result = await cursor.toArray();
-        res.send(result);
-      },
-    );
-
-    app.post("/api/applications", async (req, res) => {
-      const application = req.body;
-      const newApplication = {
-        ...application,
-        applicationDate: new Date(),
-      };
-      const result = await applicationsCollection.insertOne(newApplication);
-      res.send(result);
-    });
-
-    app.patch("/api/applications/:id", async (req, res) => {
-      const id = req.params.id;
-      if (!ObjectId.isValid(id)) {
-        return res.status(400).send({ error: "Invalid application ID format" });
-      }
-      const updateData = req.body;
-      const result = await applicationsCollection.updateOne(
-        { _id: new ObjectId(id) },
-        { $set: updateData },
-        { upsert: true },
-      );
-      res.send(result);
-    });
-
-    // All API endpoints for users
-
-    app.get("/api/users/:id", async (req, res) => {
-      const id = req.params.id;
-      if (!ObjectId.isValid(id)) {
-        return res.status(400).send({ error: "Invalid user ID format" });
-      }
-      const user = await usersCollection.findOne({ _id: new ObjectId(id) });
-      if (!user) {
-        return res.status(404).send({ error: "User not found" });
-      }
-      res.send(user);
-    });
-
-    // All API endpoints for companies
-    app.get("/api/companies", verifyToken, async (req, res) => {
-      try {
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 5;
-        const skip = (page - 1) * limit;
-
-        const statusFilter = req.query.status || "all";
-        const query = {};
-        if (statusFilter && statusFilter !== "all") {
-          query.companyStatus = statusFilter;
-        }
-
-        // --- ADDED .sort({ _id: -1 }) TO ENFORCE LATEST FIRST ---
-        const cursor = companiesCollection
-          .find(query)
-          .sort({ _id: -1 }) // Or use .sort({ createdAt: -1 }) if you track dates explicitly
-          .skip(skip)
-          .limit(limit);
-
-        const companies = await cursor.toArray();
-        const totalItems = await companiesCollection.countDocuments(query);
-
-        const totalPending = await companiesCollection.countDocuments({
-          companyStatus: "pending",
-        });
-        const totalApproved = await companiesCollection.countDocuments({
-          companyStatus: "approved",
-        });
-        const totalRejected = await companiesCollection.countDocuments({
-          companyStatus: "rejected",
-        });
-
-        res.send({
-          companies,
-          pagination: {
-            totalItems,
-            page,
-            limit,
-            totalPages: Math.ceil(totalItems / limit),
-            currentStatus: statusFilter,
-          },
-          stats: {
-            pending: totalPending,
-            approved: totalApproved,
-            rejected: totalRejected,
-          },
-        });
-      } catch (error) {
-        console.error(error);
-        res.status(500).send({ error: "Internal server error" });
-      }
-    });
-
-    app.get("/api/companies/:recruiterId", async (req, res) => {
-      const recruiterId = req.params.recruiterId;
-      const company = await companiesCollection.findOne({
-        recruiterId: recruiterId,
-      });
-      const companyInfo = company || {};
-      res.send(companyInfo);
-    });
-
-    app.post("/api/companies", async (req, res) => {
-      const company = req.body;
-      const result = await companiesCollection.insertOne(company);
-      res.send(result);
-    });
-
-    app.patch("/api/companies/:id", verifyToken, async (req, res) => {
-      try {
-        const id = req.params.id;
-        if (!ObjectId.isValid(id)) {
-          return res.status(400).send({ error: "Invalid company ID format" });
-        }
-        const updateData = req.body;
-        const result = await companiesCollection.updateOne(
-          { _id: new ObjectId(id) },
-          { $set: updateData },
-          { upsert: true },
-        );
-        res.send(result);
-      } catch (error) {
-        console.error("Error updating company:", error);
-        res.status(500).send({ error: "Internal server error" });
-      }
-    });
-
-    app.delete("/api/companies/:id", async (req, res) => {
-      try {
-        const id = req.params.id;
-        if (!ObjectId.isValid(id)) {
-          return res.status(400).send({ error: "Invalid company ID format" });
-        }
-
-        // 1. Delete the company first
-        const result = await companiesCollection.deleteOne({
-          _id: new ObjectId(id),
-        });
-
-        // 2. If no company was deleted, stop here and return 404
-        if (result.deletedCount === 0) {
-          return res.status(404).send({ error: "Company not found" });
-        }
-
-        // 3. Only delete jobs if the company actually existed and was wiped out
-        await jobsCollection.deleteMany({ companyId: id });
-
-        res.status(200).send({
-          success: true,
-          message: "Company and associated jobs deleted.",
-        });
-      } catch (error) {
-        console.error("Error deleting company:", error);
-        res.status(500).send({ error: "Internal server error" });
-      }
-    });
-
-    // All API endpoints for jobs
-
-    app.post("/api/jobs", async (req, res) => {
-      const job = req.body;
-      const result = await jobsCollection.insertOne(job);
-      res.send(result);
-    });
-
-    app.get("/api/jobs/:id", async (req, res) => {
-      const id = req.params.id;
-      if (!ObjectId.isValid(id)) {
-        return res.status(400).send({ error: "Invalid job ID format" });
-      }
-      const job = await jobsCollection.findOne({ _id: new ObjectId(id) });
-      if (!job) {
-        return res.status(404).send({ error: "Job not found" });
-      }
-      res.send(job);
-    });
-
+    // All Public API endpoints (no authentication required)
+    // Jobs Related Endpoints
     app.get("/api/jobs", async (req, res) => {
       try {
         const query = {};
@@ -381,47 +154,61 @@ async function run() {
       }
     });
 
-    app.delete("/api/jobs/:id", async (req, res) => {
+    // Companies Related Endpoints
+    app.get("/api/companies", async (req, res) => {
       try {
-        const id = req.params.id;
-        if (!ObjectId.isValid(id)) {
-          return res.status(400).send({ error: "Invalid job ID format" });
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 5;
+        const skip = (page - 1) * limit;
+
+        const statusFilter = req.query.status || "all";
+        const query = {};
+        if (statusFilter && statusFilter !== "all") {
+          query.companyStatus = statusFilter;
         }
-        const result = await jobsCollection.deleteOne({
-          _id: new ObjectId(id),
+
+        // --- ADDED .sort({ _id: -1 }) TO ENFORCE LATEST FIRST ---
+        const cursor = companiesCollection
+          .find(query)
+          .sort({ _id: -1 }) // Or use .sort({ createdAt: -1 }) if you track dates explicitly
+          .skip(skip)
+          .limit(limit);
+
+        const companies = await cursor.toArray();
+        const totalItems = await companiesCollection.countDocuments(query);
+
+        const totalPending = await companiesCollection.countDocuments({
+          companyStatus: "pending",
+        });
+        const totalApproved = await companiesCollection.countDocuments({
+          companyStatus: "approved",
+        });
+        const totalRejected = await companiesCollection.countDocuments({
+          companyStatus: "rejected",
         });
 
-        if (result.deletedCount === 0) {
-          return res.status(404).send({ error: "Job not found" });
-        }
-
-        res.status(200).send(result);
+        res.send({
+          companies,
+          pagination: {
+            totalItems,
+            page,
+            limit,
+            totalPages: Math.ceil(totalItems / limit),
+            currentStatus: statusFilter,
+          },
+          stats: {
+            pending: totalPending,
+            approved: totalApproved,
+            rejected: totalRejected,
+          },
+        });
       } catch (error) {
-        console.error("Error deleting job:", error);
+        console.error(error);
         res.status(500).send({ error: "Internal server error" });
       }
     });
 
-    app.patch("/api/jobs/:id", async (req, res) => {
-      try {
-        const id = req.params.id;
-        if (!ObjectId.isValid(id)) {
-          return res.status(400).send({ error: "Invalid job ID format" });
-        }
-        const updateData = req.body;
-        const result = await jobsCollection.updateOne(
-          { _id: new ObjectId(id) },
-          { $set: updateData },
-          { upsert: true },
-        );
-        res.send(result);
-      } catch (error) {
-        console.error("Error updating job:", error);
-        res.status(500).send({ error: "Internal server error" });
-      }
-    });
-
-    // All API endpoints for plans
+    // Plans Related Endpoints
     app.get("/api/plans", async (req, res) => {
       const query = {};
       if (req.query.plan_id) {
@@ -431,8 +218,42 @@ async function run() {
       res.send(cursor);
     });
 
-    // All API endpoints for subscriptions
-    app.post("/api/subscriptions", async (req, res) => {
+    // All API endpoints for logged in users (seekers, recruiters, admins)
+    // Jobs Related Endpoints
+    app.get("/api/jobs/:id", verifyToken, async (req, res) => {
+      const id = req.params.id;
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).send({ error: "Invalid job ID format" });
+      }
+      const job = await jobsCollection.findOne({ _id: new ObjectId(id) });
+      if (!job) {
+        return res.status(404).send({ error: "Job not found" });
+      }
+      res.send(job);
+    });
+
+    // Companies Related Endpoints
+    app.patch("/api/companies/:id", verifyToken, async (req, res) => {
+      try {
+        const id = req.params.id;
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).send({ error: "Invalid company ID format" });
+        }
+        const updateData = req.body;
+        const result = await companiesCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updateData },
+          { upsert: true },
+        );
+        res.send(result);
+      } catch (error) {
+        console.error("Error updating company:", error);
+        res.status(500).send({ error: "Internal server error" });
+      }
+    });
+
+    // Subscriptions Related Endpoints
+    app.post("/api/subscriptions", verifyToken, async (req, res) => {
       const data = req.body;
       const subscription = {
         ...data,
@@ -452,45 +273,269 @@ async function run() {
       res.send({ result, updateResult });
     });
 
-    // All API endpoints for recruiter dashboard stats
-    app.get("/api/recruiter-stats", async (req, res) => {
-      const { recruiterId } = req.query;
-      if (!recruiterId) {
-        return res.status(400).send({ error: "Missing recruiterId parameter" });
-      }
-      const company = await companiesCollection.findOne({ recruiterId });
-      if (!company) {
-        return res
-          .status(404)
-          .send({ error: "Company not found for recruiter" });
-      }
-      const companyId = company._id.toString();
+    // All API endpoints for logged in seekers
+    // Applications Related Endpoints
+    app.get(
+      "/api/my-applications",
+      verifyToken,
+      verifySeeker,
+      async (req, res) => {
+        const query = {};
+        if (req.query.applicantId) {
+          query.applicantId = req.query.applicantId;
+          if (query.applicantId !== req.user._id.toString()) {
+            return res.status(403).send({ message: "Forbidden Access" });
+          }
+        }
+        const cursor = applicationsCollection.find(query);
+        const result = await cursor.toArray();
+        res.send(result);
+      },
+    );
 
-      const recentApplications = await applicationsCollection
-        .find({ companyId })
-        .sort({ applicationDate: -1 })
-        .limit(5)
-        .toArray();
-      const totalJobs = await jobsCollection.countDocuments({ companyId });
-      const totalApplications = await applicationsCollection.countDocuments({
-        companyId,
-      });
-      const activeJobs = await jobsCollection.countDocuments({
-        companyId,
-        jobStatus: "active",
-      });
-      const closedJobs = await jobsCollection.countDocuments({
-        companyId,
-        jobStatus: "closed",
-      });
+    app.post(
+      "/api/applications",
+      verifyToken,
+      verifySeeker,
+      async (req, res) => {
+        const application = req.body;
+        const newApplication = {
+          ...application,
+          applicationDate: new Date(),
+        };
+        const result = await applicationsCollection.insertOne(newApplication);
+        res.send(result);
+      },
+    );
 
-      res.send({
-        totalJobs,
-        totalApplications,
-        activeJobs,
-        closedJobs,
-        recentApplications,
-      });
+    // All API endpoints for logged in recruiters
+    // Applications Related Endpoints
+    app.get(
+      "/api/applications",
+      verifyToken,
+      verifyRecruiter,
+      async (req, res) => {
+        const query = {};
+        if (req.query.jobId) {
+          query.jobId = req.query.jobId;
+        }
+        if (req.query.recruiterId) {
+          const company = await companiesCollection.findOne({
+            recruiterId: req.query.recruiterId,
+          });
+          if (company) {
+            query.companyId = company._id.toString();
+          } else {
+            return res
+              .status(404)
+              .send({ error: "Company not found for recruiter" });
+          }
+        }
+        const cursor = applicationsCollection.find(query);
+        const result = await cursor.toArray();
+        res.send(result);
+      },
+    );
+
+    app.patch(
+      "/api/applications/:id",
+      verifyToken,
+      verifyRecruiter,
+      async (req, res) => {
+        const id = req.params.id;
+        if (!ObjectId.isValid(id)) {
+          return res
+            .status(400)
+            .send({ error: "Invalid application ID format" });
+        }
+        const updateData = req.body;
+        const result = await applicationsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updateData },
+          { upsert: true },
+        );
+        res.send(result);
+      },
+    );
+
+    // Companies Related Endpoints
+    app.get(
+      "/api/companies/:recruiterId",
+      verifyToken,
+      verifyRecruiter,
+      async (req, res) => {
+        const recruiterId = req.params.recruiterId;
+        const company = await companiesCollection.findOne({
+          recruiterId: recruiterId,
+        });
+        const companyInfo = company || {};
+        res.send(companyInfo);
+      },
+    );
+
+    app.post(
+      "/api/companies",
+      verifyToken,
+      verifyRecruiter,
+      async (req, res) => {
+        const company = req.body;
+        const result = await companiesCollection.insertOne(company);
+        res.send(result);
+      },
+    );
+
+    app.delete(
+      "/api/companies/:id",
+      verifyToken,
+      verifyRecruiter,
+      async (req, res) => {
+        try {
+          const id = req.params.id;
+          if (!ObjectId.isValid(id)) {
+            return res.status(400).send({ error: "Invalid company ID format" });
+          }
+
+          // 1. Delete the company first
+          const result = await companiesCollection.deleteOne({
+            _id: new ObjectId(id),
+          });
+
+          // 2. If no company was deleted, stop here and return 404
+          if (result.deletedCount === 0) {
+            return res.status(404).send({ error: "Company not found" });
+          }
+
+          // 3. Only delete jobs if the company actually existed and was wiped out
+          await jobsCollection.deleteMany({ companyId: id });
+
+          res.status(200).send({
+            success: true,
+            message: "Company and associated jobs deleted.",
+          });
+        } catch (error) {
+          console.error("Error deleting company:", error);
+          res.status(500).send({ error: "Internal server error" });
+        }
+      },
+    );
+
+    // Stats Related Endpoints
+    app.get(
+      "/api/recruiter-stats",
+      verifyToken,
+      verifyRecruiter,
+      async (req, res) => {
+        const { recruiterId } = req.query;
+        if (!recruiterId) {
+          return res
+            .status(400)
+            .send({ error: "Missing recruiterId parameter" });
+        }
+        const company = await companiesCollection.findOne({ recruiterId });
+        if (!company) {
+          return res
+            .status(404)
+            .send({ error: "Company not found for recruiter" });
+        }
+        const companyId = company._id.toString();
+
+        const recentApplications = await applicationsCollection
+          .find({ companyId })
+          .sort({ applicationDate: -1 })
+          .limit(5)
+          .toArray();
+        const totalJobs = await jobsCollection.countDocuments({ companyId });
+        const totalApplications = await applicationsCollection.countDocuments({
+          companyId,
+        });
+        const activeJobs = await jobsCollection.countDocuments({
+          companyId,
+          jobStatus: "active",
+        });
+        const closedJobs = await jobsCollection.countDocuments({
+          companyId,
+          jobStatus: "closed",
+        });
+
+        res.send({
+          totalJobs,
+          totalApplications,
+          activeJobs,
+          closedJobs,
+          recentApplications,
+        });
+      },
+    );
+
+    // Jobs Related Endpoints
+    app.post("/api/jobs", verifyToken, verifyRecruiter, async (req, res) => {
+      const job = req.body;
+      const result = await jobsCollection.insertOne(job);
+      res.send(result);
+    });
+
+    app.delete(
+      "/api/jobs/:id",
+      verifyToken,
+      verifyRecruiter,
+      async (req, res) => {
+        try {
+          const id = req.params.id;
+          if (!ObjectId.isValid(id)) {
+            return res.status(400).send({ error: "Invalid job ID format" });
+          }
+          const result = await jobsCollection.deleteOne({
+            _id: new ObjectId(id),
+          });
+
+          if (result.deletedCount === 0) {
+            return res.status(404).send({ error: "Job not found" });
+          }
+
+          res.status(200).send(result);
+        } catch (error) {
+          console.error("Error deleting job:", error);
+          res.status(500).send({ error: "Internal server error" });
+        }
+      },
+    );
+
+    app.patch(
+      "/api/jobs/:id",
+      verifyToken,
+      verifyRecruiter,
+      async (req, res) => {
+        try {
+          const id = req.params.id;
+          if (!ObjectId.isValid(id)) {
+            return res.status(400).send({ error: "Invalid job ID format" });
+          }
+          const updateData = req.body;
+          const result = await jobsCollection.updateOne(
+            { _id: new ObjectId(id) },
+            { $set: updateData },
+            { upsert: true },
+          );
+          res.send(result);
+        } catch (error) {
+          console.error("Error updating job:", error);
+          res.status(500).send({ error: "Internal server error" });
+        }
+      },
+    );
+
+    // All API endpoints for logged in admins
+    // Users Related Endpoints
+    app.get("/api/users/:id", verifyToken, verifyAdmin, async (req, res) => {
+      const id = req.params.id;
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).send({ error: "Invalid user ID format" });
+      }
+      const user = await usersCollection.findOne({ _id: new ObjectId(id) });
+      if (!user) {
+        return res.status(404).send({ error: "User not found" });
+      }
+      res.send(user);
     });
 
     console.log(
