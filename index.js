@@ -35,6 +35,7 @@ async function run() {
     const plansCollection = db.collection("plans");
     const subscriptionsCollection = db.collection("subscriptions");
     const sessionCollection = db.collection("session");
+    const savedJobsCollection = db.collection("saved_jobs");
 
     // verification middleware for protected routes
     const verifyToken = async (req, res, next) => {
@@ -307,6 +308,67 @@ async function run() {
         res.send(result);
       },
     );
+
+    // Saved Jobs Related Endpoints
+    app.post("/api/saved-jobs/toggle", verifyToken, async (req, res) => {
+      try {
+        const { jobId } = req.body;
+
+        const userId = req.user?.id || req.decoded?.id;
+
+        if (!userId || !jobId) {
+          return res
+            .status(400)
+            .send({ error: "Missing identity credentials or jobId." });
+        }
+
+        const query = { userId: userId, jobId: jobId };
+        const existingSave = await savedJobsCollection.findOne(query);
+
+        if (existingSave) {
+          await savedJobsCollection.deleteOne(query);
+          return res.send({
+            saved: false,
+            message: "Job removed from saved list.",
+          });
+        } else {
+          await savedJobsCollection.insertOne({
+            userId,
+            jobId,
+            savedAt: new Date(),
+          });
+          return res.send({
+            saved: true,
+            message: "Job saved successfully.",
+          });
+        }
+      } catch (error) {
+        console.error("Error toggling saved job:", error);
+        res.status(500).send({ error: "Internal server error" });
+      }
+    });
+
+    app.get("/api/saved-jobs/check/:jobId", verifyToken, async (req, res) => {
+      try {
+        const { jobId } = req.params;
+        const userId = req.user?.id || req.decoded?.id;
+
+        if (!userId || !jobId) {
+          return res
+            .status(400)
+            .send({ error: "Missing identity credentials or jobId." });
+        }
+
+        const savedRecord = await savedJobsCollection.findOne({
+          userId: userId,
+          jobId: jobId,
+        });
+        res.send({ isSaved: !!savedRecord });
+      } catch (error) {
+        console.error("Error checking saved job:", error);
+        res.status(500).send({ error: "Internal server error" });
+      }
+    });
 
     // All API endpoints for logged in recruiters
     // Applications Related Endpoints
