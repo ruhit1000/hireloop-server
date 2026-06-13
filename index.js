@@ -97,29 +97,20 @@ async function run() {
         if (req.query.featured) {
           query.isFeatured = req.query.featured === "true";
         }
-
-        // --- Search & Filter Parameters ---
-
-        // Search by Job Title (Partial match, Case-insensitive)
         if (req.query.search) {
           query.jobTitle = { $regex: req.query.search, $options: "i" };
         }
-
-        // Exact match for Category
         if (req.query.category && req.query.category !== "all") {
           query.jobCategory = req.query.category;
         }
-
-        // Exact match for Job Type
         if (req.query.type && req.query.type !== "all") {
           query.jobType = req.query.type;
         }
-
-        // Boolean check for Location (Remote vs Onsite)
         if (req.query.location && req.query.location !== "all") {
           query.isRemote = req.query.location === "remote";
         }
 
+        // Shared verification pipeline matrix base
         const pipeline = [
           { $match: query },
           {
@@ -141,14 +132,42 @@ async function run() {
               as: "companyDetails",
             },
           },
-
           { $match: { companyDetails: { $not: { $size: 0 } } } },
-
-          { $project: { companyDetails: 0 } },
         ];
 
-        const result = await jobsCollection.aggregate(pipeline).toArray();
-        res.send(result);
+        // 1. Get the TOTAL matching count before slicing records via skip/limit
+        const countPipeline = [...pipeline, { $count: "total" }];
+        const countResult = await jobsCollection
+          .aggregate(countPipeline)
+          .toArray();
+        const totalItems = countResult[0]?.total || 0;
+
+        // 2. Parse pagination arguments
+        const page = parseInt(req.query.page) || 1;
+        const itemsPerPage = parseInt(req.query.perPage) || 15;
+        const skip = (page - 1) * itemsPerPage;
+
+        // 3. Complete main query data slice execution
+        const dataPipeline = [
+          ...pipeline,
+          { $project: { companyDetails: 0 } },
+          { $skip: skip },
+          { $limit: itemsPerPage },
+        ];
+
+        const jobs = await jobsCollection.aggregate(dataPipeline).toArray();
+        const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
+
+        // Return uniform layout schema envelope to frontend
+        res.send({
+          jobs,
+          meta: {
+            totalItems,
+            totalPages,
+            currentPage: page,
+            itemsPerPage,
+          },
+        });
       } catch (error) {
         console.error(error);
         res.status(500).send({ error: "Internal server error" });
