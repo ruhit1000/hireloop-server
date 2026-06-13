@@ -48,8 +48,14 @@ async function run() {
       }
       const query = { token: token };
       const session = await sessionCollection.findOne(query);
+      if (!session) {
+        return res.status(401).send({ message: "Unauthorized Access" });
+      }
       const userId = session?.userId;
       const user = await usersCollection.findOne({ _id: userId });
+      if (!user) {
+        return res.status(401).send({ message: "Unauthorized Access" });
+      }
       req.user = user;
       next();
     };
@@ -153,11 +159,6 @@ async function run() {
     });
 
     // All API endpoints for users
-    app.get("/api/users", async (req, res) => {
-      const cursor = usersCollection.find({});
-      const result = await cursor.toArray();
-      res.send(result);
-    });
 
     app.get("/api/users/:id", async (req, res) => {
       const id = req.params.id;
