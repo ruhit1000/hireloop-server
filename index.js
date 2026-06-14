@@ -329,17 +329,74 @@ async function run() {
     );
 
     // Saved Jobs Related Endpoints
-    app.post("/api/saved-jobs/toggle", verifyToken, async (req, res) => {
+    app.get("/api/saved-jobs", verifyToken, verifySeeker, async (req, res) => {
+      try {
+        const userIdStr = req.user?._id || req.decoded?._id;
+
+        if (!userIdStr) {
+          return res.status(401).send({ error: "Unauthorized access." });
+        }
+
+        const userId = new ObjectId(userIdStr);
+
+        const savedJobsList = await savedJobsCollection
+          .aggregate([
+            {
+              $match: { userId: userId },
+            },
+            {
+              $lookup: {
+                from: "jobs",
+                let: { savedJobId: "$jobId" },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: { $eq: ["$_id", { $toObjectId: "$$savedJobId" }] },
+                    },
+                  },
+                ],
+                as: "jobDetails",
+              },
+            },
+            {
+              $unwind: "$jobDetails",
+            },
+            {
+              $project: {
+                _id: "$jobDetails._id",
+                jobTitle: "$jobDetails.jobTitle",
+                companyName: "$jobDetails.companyName",
+                companyLogo: "$jobDetails.companyLogo",
+                isRemote: "$jobDetails.isRemote",
+                minSalary: "$jobDetails.minSalary",
+                maxSalary: "$jobDetails.maxSalary",
+                currency: "$jobDetails.currency",
+                deadline: "$jobDetails.deadline",
+                savedAt: "$savedAt",
+              },
+            },
+          ])
+          .toArray();
+
+        res.send(savedJobsList);
+      } catch (error) {
+        console.error("Error retrieving minimalist saved jobs:", error);
+        res.status(500).send({ error: "Internal server error" });
+      }
+    });
+
+    app.post("/api/saved-jobs/toggle", verifyToken, verifySeeker, async (req, res) => {
       try {
         const { jobId } = req.body;
+        const userIdStr = req.user?._id || req.decoded?._id;
 
-        const userId = req.user?.id || req.decoded?.id;
-
-        if (!userId || !jobId) {
+        if (!userIdStr || !jobId) {
           return res
             .status(400)
             .send({ error: "Missing identity credentials or jobId." });
         }
+
+        const userId = new ObjectId(userIdStr);
 
         const query = { userId: userId, jobId: jobId };
         const existingSave = await savedJobsCollection.findOne(query);
@@ -367,24 +424,22 @@ async function run() {
       }
     });
 
-    app.get("/api/saved-jobs/check/:jobId", verifyToken, async (req, res) => {
+    app.get("/api/saved-jobs/ids", verifyToken, verifySeeker, async (req, res) => {
       try {
-        const { jobId } = req.params;
-        const userId = req.user?.id || req.decoded?.id;
+        const userIdStr = req.user?._id || req.decoded?._id;
+        if (!userIdStr) return res.status(401).send({ error: "Unauthorized" });
+        const userId = new ObjectId(userIdStr);
 
-        if (!userId || !jobId) {
-          return res
-            .status(400)
-            .send({ error: "Missing identity credentials or jobId." });
-        }
+        const savedJobs = await savedJobsCollection
+          .find({ userId })
+          .project({ jobId: 1, _id: 0 })
+          .toArray();
 
-        const savedRecord = await savedJobsCollection.findOne({
-          userId: userId,
-          jobId: jobId,
-        });
-        res.send({ isSaved: !!savedRecord });
+        const savedIds = savedJobs.map((doc) => doc.jobId.toString());
+
+        res.send(savedIds);
       } catch (error) {
-        console.error("Error checking saved job:", error);
+        console.error("Error fetching saved job IDs:", error);
         res.status(500).send({ error: "Internal server error" });
       }
     });
