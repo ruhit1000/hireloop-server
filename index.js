@@ -182,19 +182,38 @@ async function run() {
         const skip = (page - 1) * limit;
 
         const statusFilter = req.query.status || "all";
+        const searchFilter = req.query.search || "";
+
         const query = {};
         if (statusFilter && statusFilter !== "all") {
           query.companyStatus = statusFilter;
         }
+        if (searchFilter.trim()) {
+          query.name = { $regex: searchFilter.trim(), $options: "i" };
+        }
 
-        // --- ADDED .sort({ _id: -1 }) TO ENFORCE LATEST FIRST ---
         const cursor = companiesCollection
           .find(query)
-          .sort({ _id: -1 }) // Or use .sort({ createdAt: -1 }) if you track dates explicitly
+          .sort({ _id: -1 })
           .skip(skip)
           .limit(limit);
 
-        const companies = await cursor.toArray();
+        const rawCompanies = await cursor.toArray();
+
+        const companies = await Promise.all(
+          rawCompanies.map(async (company) => {
+            const activeJobsCount = await jobsCollection.countDocuments({
+              companyId: company._id.toString(),
+              jobStatus: "active",
+            });
+
+            return {
+              ...company,
+              activeJobs: activeJobsCount,
+            };
+          }),
+        );
+
         const totalItems = await companiesCollection.countDocuments(query);
 
         const totalPending = await companiesCollection.countDocuments({
@@ -215,6 +234,7 @@ async function run() {
             limit,
             totalPages: Math.ceil(totalItems / limit),
             currentStatus: statusFilter,
+            currentSearch: searchFilter,
           },
           stats: {
             pending: totalPending,
@@ -223,7 +243,10 @@ async function run() {
           },
         });
       } catch (error) {
-        console.error(error);
+        console.error(
+          "Error fetching companies with active job counts:",
+          error,
+        );
         res.status(500).send({ error: "Internal server error" });
       }
     });
@@ -270,6 +293,24 @@ async function run() {
         console.error("Error updating company:", error);
         res.status(500).send({ error: "Internal server error" });
       }
+    });
+
+    app.get("/api/companies/:id", verifyToken, async (req, res) => {
+      const id = req.params.id;
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).send({ error: "Invalid company ID format" });
+      }
+      const activeJobs = await jobsCollection.countDocuments({
+        companyId: id,
+        jobStatus: "active",
+      });
+      const company = await companiesCollection.findOne({
+        _id: new ObjectId(id),
+      });
+      if (!company) {
+        return res.status(404).send({ error: "Company not found" });
+      }
+      res.send({ ...company, activeJobs });
     });
 
     // Subscriptions Related Endpoints
@@ -385,64 +426,75 @@ async function run() {
       }
     });
 
-    app.post("/api/saved-jobs/toggle", verifyToken, verifySeeker, async (req, res) => {
-      try {
-        const { jobId } = req.body;
-        const userIdStr = req.user?._id || req.decoded?._id;
+    app.post(
+      "/api/saved-jobs/toggle",
+      verifyToken,
+      verifySeeker,
+      async (req, res) => {
+        try {
+          const { jobId } = req.body;
+          const userIdStr = req.user?._id || req.decoded?._id;
 
-        if (!userIdStr || !jobId) {
-          return res
-            .status(400)
-            .send({ error: "Missing identity credentials or jobId." });
+          if (!userIdStr || !jobId) {
+            return res
+              .status(400)
+              .send({ error: "Missing identity credentials or jobId." });
+          }
+
+          const userId = new ObjectId(userIdStr);
+
+          const query = { userId: userId, jobId: jobId };
+          const existingSave = await savedJobsCollection.findOne(query);
+
+          if (existingSave) {
+            await savedJobsCollection.deleteOne(query);
+            return res.send({
+              saved: false,
+              message: "Job removed from saved list.",
+            });
+          } else {
+            await savedJobsCollection.insertOne({
+              userId,
+              jobId,
+              savedAt: new Date(),
+            });
+            return res.send({
+              saved: true,
+              message: "Job saved successfully.",
+            });
+          }
+        } catch (error) {
+          console.error("Error toggling saved job:", error);
+          res.status(500).send({ error: "Internal server error" });
         }
+      },
+    );
 
-        const userId = new ObjectId(userIdStr);
+    app.get(
+      "/api/saved-jobs/ids",
+      verifyToken,
+      verifySeeker,
+      async (req, res) => {
+        try {
+          const userIdStr = req.user?._id || req.decoded?._id;
+          if (!userIdStr)
+            return res.status(401).send({ error: "Unauthorized" });
+          const userId = new ObjectId(userIdStr);
 
-        const query = { userId: userId, jobId: jobId };
-        const existingSave = await savedJobsCollection.findOne(query);
+          const savedJobs = await savedJobsCollection
+            .find({ userId })
+            .project({ jobId: 1, _id: 0 })
+            .toArray();
 
-        if (existingSave) {
-          await savedJobsCollection.deleteOne(query);
-          return res.send({
-            saved: false,
-            message: "Job removed from saved list.",
-          });
-        } else {
-          await savedJobsCollection.insertOne({
-            userId,
-            jobId,
-            savedAt: new Date(),
-          });
-          return res.send({
-            saved: true,
-            message: "Job saved successfully.",
-          });
+          const savedIds = savedJobs.map((doc) => doc.jobId.toString());
+
+          res.send(savedIds);
+        } catch (error) {
+          console.error("Error fetching saved job IDs:", error);
+          res.status(500).send({ error: "Internal server error" });
         }
-      } catch (error) {
-        console.error("Error toggling saved job:", error);
-        res.status(500).send({ error: "Internal server error" });
-      }
-    });
-
-    app.get("/api/saved-jobs/ids", verifyToken, verifySeeker, async (req, res) => {
-      try {
-        const userIdStr = req.user?._id || req.decoded?._id;
-        if (!userIdStr) return res.status(401).send({ error: "Unauthorized" });
-        const userId = new ObjectId(userIdStr);
-
-        const savedJobs = await savedJobsCollection
-          .find({ userId })
-          .project({ jobId: 1, _id: 0 })
-          .toArray();
-
-        const savedIds = savedJobs.map((doc) => doc.jobId.toString());
-
-        res.send(savedIds);
-      } catch (error) {
-        console.error("Error fetching saved job IDs:", error);
-        res.status(500).send({ error: "Internal server error" });
-      }
-    });
+      },
+    );
 
     // All API endpoints for logged in recruiters
     // Applications Related Endpoints
