@@ -23,9 +23,13 @@ const client = new MongoClient(uri, {
   },
 });
 
-async function run() {
-  try {
-    await client.connect();
+// async function run() {
+//   try {
+//     await client.connect();
+
+client.connect(() => {
+  console.log("Connected to MongoDB");
+}).catch(console.dir);
 
     const db = client.db("hireloop_db");
     const jobsCollection = db.collection("jobs");
@@ -726,14 +730,14 @@ async function run() {
       res.send(user);
     });
 
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!",
-    );
-  } finally {
-    // await client.close();
-  }
-}
-run().catch(console.dir);
+//     console.log(
+//       "Pinged your deployment. You successfully connected to MongoDB!",
+//     );
+//   } finally {
+//     // await client.close();
+//   }
+// }
+// run().catch(console.dir);
 
 app.get("/", (req, res) => {
   res.send("Hello World!");
@@ -742,3 +746,5 @@ app.get("/", (req, res) => {
 app.listen(port, () => {
   console.log(`Example app listening on port ${port}`);
 });
+
+module.exports = app;
